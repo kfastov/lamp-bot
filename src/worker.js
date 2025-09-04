@@ -154,6 +154,11 @@ const APP_HTML = `<!doctype html>
   input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;border:1px solid #cfd9e6;background:var(--thumb);box-shadow:0 2px 8px rgba(0,0,0,.4), inset 0 -3px 6px rgba(0,0,0,.08);margin-top:-8px}
   input[type="range"]::-moz-range-track{width:10px;height:100%;background:var(--track);border-radius:999px;border:1px solid #1c2432}
   input[type="range"]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;border:1px solid #cfd9e6;background:var(--thumb);box-shadow:0 2px 8px rgba(0,0,0,.4), inset 0 -3px 6px rgba(0,0,0,.08)}
+  /* Safari/iOS: force true vertical slider and correct thumb centering */
+  @supports (-webkit-appearance: slider-vertical) {
+    input[type="range"]{ -webkit-appearance: slider-vertical; writing-mode: vertical-lr; width:44px; height:260px }
+    input[type="range"]::-webkit-slider-thumb{ margin-top:0; margin-left:-8px }
+  }
   .temp-wrap{position:relative;width:44px;height:260px;display:grid;place-items:center}
   .temp-wrap::before{content:"";position:absolute;inset:0 17px;border-radius:999px;background:linear-gradient(to top,#ffb169 0%,#ffd9ad 35%,#fffaf1 55%,#e9f4ff 80%,#cfe8ff 100%);filter:saturate(1.2)}
   .temp-wrap input[type="range"]::-webkit-slider-runnable-track,
@@ -172,12 +177,12 @@ const APP_HTML = `<!doctype html>
       <div class="sliders">
         <div class="vslider" id="briBox">
           <div class="label">Яркость</div>
-          <input id="bri" type="range" min="1" max="100" step="1" value="50"/>
+          <input id="bri" type="range" min="1" max="100" step="1" value="50" orient="vertical"/>
           <div class="value" id="briVal">50%</div>
         </div>
         <div class="vslider" id="tmpBox">
           <div class="label">Температура</div>
-          <div class="temp-wrap"><input id="tmp" type="range" min="2700" max="6500" step="100" value="4000"/></div>
+          <div class="temp-wrap"><input id="tmp" type="range" min="2700" max="6500" step="100" value="4000" orient="vertical"/></div>
           <div class="value" id="tmpVal">4000K</div>
         </div>
       </div>
