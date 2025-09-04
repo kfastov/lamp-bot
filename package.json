@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "name": "lamp-bot",
+  "version": "0.0.1",
+  "devDependencies": { "wrangler": "^3" },
+  "scripts": { "deploy": "wrangler deploy --config wrangler.toml" }
+}
