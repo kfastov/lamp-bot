@@ -149,20 +149,13 @@ const APP_HTML = `<!doctype html>
   .sliders{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:6px 8px 2px}
   .vslider{display:grid;grid-template-rows:auto 1fr auto;gap:10px;place-items:center}
   .label{font-size:13px;color:var(--muted)} .value{font-size:20px;font-weight:600}
-  input[type="range"]{-webkit-appearance:none;width:44px;height:260px;writing-mode:bt-lr;background:transparent;margin:0}
-  input[type="range"]::-webkit-slider-runnable-track{width:10px;height:100%;background:var(--track);border-radius:999px;border:1px solid #1c2432}
-  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;border:1px solid #cfd9e6;background:var(--thumb);box-shadow:0 2px 8px rgba(0,0,0,.4), inset 0 -3px 6px rgba(0,0,0,.08);margin-top:-8px}
-  input[type="range"]::-moz-range-track{width:10px;height:100%;background:var(--track);border-radius:999px;border:1px solid #1c2432}
-  input[type="range"]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;border:1px solid #cfd9e6;background:var(--thumb);box-shadow:0 2px 8px rgba(0,0,0,.4), inset 0 -3px 6px rgba(0,0,0,.08)}
-  /* Safari/iOS: force true vertical slider and correct thumb centering */
-  @supports (-webkit-appearance: slider-vertical) {
-    input[type="range"]{ -webkit-appearance: slider-vertical; writing-mode: vertical-lr; width:44px; height:260px }
-    input[type="range"]::-webkit-slider-thumb{ margin-top:0; margin-left:-8px }
-  }
-  .temp-wrap{position:relative;width:44px;height:260px;display:grid;place-items:center}
-  .temp-wrap::before{content:"";position:absolute;inset:0 17px;border-radius:999px;background:linear-gradient(to top,#ffb169 0%,#ffd9ad 35%,#fffaf1 55%,#e9f4ff 80%,#cfe8ff 100%);filter:saturate(1.2)}
-  .temp-wrap input[type="range"]::-webkit-slider-runnable-track,
-  .temp-wrap input[type="range"]::-moz-range-track{background:transparent;border:1px solid rgba(0,0,0,.0)}
+  /* iOS-like vertical bars */
+  .bar{position:relative;width:52px;height:260px;border-radius:26px;background:linear-gradient(180deg,#0f1722,#0c121b);border:1px solid #1e2a3a;box-shadow:inset 0 2px 10px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04)}
+  .bar .fill{position:absolute;left:3px;right:3px;bottom:3px;border-radius:22px;background:linear-gradient(180deg,#e9f2fb,#cfd9e6);box-shadow:0 6px 18px rgba(0,0,0,.35), inset 0 -6px 10px rgba(0,0,0,.12)}
+  .bar.temp{background:linear-gradient(180deg,#0f1722,#0c121b);}
+  .bar.temp::before{content:"";position:absolute;left:19px;right:19px;top:3px;bottom:3px;border-radius:22px;background:linear-gradient(to top,#ffb169 0%,#ffd9ad 35%,#fffaf1 55%,#e9f4ff 80%,#cfe8ff 100%);filter:saturate(1.2);opacity:.9}
+  .bar.temp .fill{background:linear-gradient(180deg,rgba(240,245,255,.95),rgba(220,230,245,.95))}
+  .bar.grab{filter:brightness(1.05)}
   .bottom{position:sticky;bottom:0;padding:14px 20px;background:linear-gradient(180deg,transparent 0%,rgba(11,15,20,.85) 40%,rgba(11,15,20,.98) 100%);display:grid;place-items:center;border-top:1px solid #0f1722}
   .btn{width:min(420px,92vw);background:linear-gradient(180deg,#25bfae,#15b7a5);color:#061017;font-weight:700;letter-spacing:.2px;padding:14px 18px;border-radius:16px;border:1px solid #0d9488;cursor:pointer;box-shadow:0 10px 25px rgba(20,170,150,.35), inset 0 1px 0 rgba(255,255,255,.4);transition:transform .04s ease-in-out, filter .15s ease}
   .btn:active{transform:translateY(1px)} .btn.off{background:linear-gradient(180deg,#334155,#283445);color:#cbd5e1;border-color:#1f2937;box-shadow:none} .muted{opacity:.5;filter:grayscale(.15)}
@@ -177,12 +170,12 @@ const APP_HTML = `<!doctype html>
       <div class="sliders">
         <div class="vslider" id="briBox">
           <div class="label">Яркость</div>
-          <input id="bri" type="range" min="1" max="100" step="1" value="50" orient="vertical"/>
+          <div id="briBar" class="bar"><div class="fill" style="height:50%"></div></div>
           <div class="value" id="briVal">50%</div>
         </div>
         <div class="vslider" id="tmpBox">
           <div class="label">Температура</div>
-          <div class="temp-wrap"><input id="tmp" type="range" min="2700" max="6500" step="100" value="4000" orient="vertical"/></div>
+          <div id="tmpBar" class="bar temp"><div class="fill" style="height:50%"></div></div>
           <div class="value" id="tmpVal">4000K</div>
         </div>
       </div>
@@ -192,20 +185,76 @@ const APP_HTML = `<!doctype html>
 </div>
 <script>
 const $ = s => document.querySelector(s);
-const bri = $('#bri'), tmp = $('#tmp'), power = $('#power');
+const briBar = $('#briBar'), tmpBar = $('#tmpBar'), power = $('#power');
+const briFill = () => $('#briBar .fill');
+const tmpFill = () => $('#tmpBar .fill');
 const briVal = $('#briVal'), tmpVal = $('#tmpVal');
-let state = { on:true, brightness:50, temperature_k:4000 }, t1=null, t2=null, sending=false;
+let state = { on:true, brightness:50, temperature_k:4000 }, t1=null, t2=null, sending=false, dragging=null;
 
 init();
 async function init(){
   try{ const r = await fetch('/api/state'); const j = await r.json(); if(j.ok){ state=j; applyUI(); } }catch{}
-  bri.addEventListener('input', () => { const v=clamp(+bri.value,1,100); briVal.textContent=v+'%'; debounce('b',()=>send({brightness:v})); });
-  tmp.addEventListener('input', () => { const v=clamp(+tmp.value,2700,6500); tmpVal.textContent=v+'K'; debounce('t',()=>send({temperature_k:v})); });
+  setupBar(briBar, 1, 100, v => { briVal.textContent=v+'%'; debounce('b',()=>send({brightness:v})); });
+  setupBar(tmpBar, 2700, 6500, v => { tmpVal.textContent=v+'K'; debounce('t',()=>send({temperature_k:v})); });
   power.addEventListener('click', async () => { const on=!state.on; await send({on}); state.on=on; applyUI(); });
 }
-function applyUI(){ bri.value=state.brightness; briVal.textContent=state.brightness+'%'; tmp.value=state.temperature_k; tmpVal.textContent=state.temperature_k+'K'; power.textContent=state.on?'Выключить':'Включить'; power.classList.toggle('off',!state.on); document.querySelector('.card').classList.toggle('muted',!state.on); }
+function applyUI(){
+  const briPct = (state.brightness-1)/(100-1);
+  const tmpPct = (state.temperature_k-2700)/(6500-2700);
+  briFill().style.height = Math.round(briPct*100)+'%';
+  tmpFill().style.height = Math.round(tmpPct*100)+'%';
+  briVal.textContent=state.brightness+'%';
+  tmpVal.textContent=state.temperature_k+'K';
+  power.textContent=state.on?'Выключить':'Включить';
+  power.classList.toggle('off',!state.on);
+  document.querySelector('.card').classList.toggle('muted',!state.on);
+}
 function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
 function debounce(which,fn){ if(which==='b'){ clearTimeout(t1); t1=setTimeout(fn,120);} else { clearTimeout(t2); t2=setTimeout(fn,120);} }
 async function send(patch){ if(sending) return; sending=true; try{ const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}); const j=await r.json(); if(!j.ok) console.warn('action failed', j); else Object.assign(state,patch);}catch(e){console.error(e);} sending=false;}
+
+// Pointer handling for bars
+function setupBar(el, min, max, onChange){
+  const getValueFromY = (clientY) => {
+    const rect = el.getBoundingClientRect();
+    const y = clamp(clientY - rect.top, 0, rect.height);
+    const pct = 1 - (y / rect.height);
+    const value = Math.round(min + pct * (max - min));
+    return clamp(value, min, max);
+  };
+  const updateFill = (val) => {
+    const pct = (val - min) / (max - min);
+    el.querySelector('.fill').style.height = Math.round(pct*100) + '%';
+  };
+  const start = (ev) => {
+    ev.preventDefault(); el.classList.add('grab'); dragging = el;
+    const cY = ev.touches? ev.touches[0].clientY : ev.clientY;
+    const v = getValueFromY(cY); updateFill(v); onChange(v);
+    window.addEventListener('pointermove', move, { passive:false });
+    window.addEventListener('pointerup', end, { passive:false, once:true });
+    window.addEventListener('touchmove', move, { passive:false });
+    window.addEventListener('touchend', end, { passive:false, once:true });
+    window.addEventListener('mousemove', move, { passive:false });
+    window.addEventListener('mouseup', end, { passive:false, once:true });
+  };
+  const move = (ev) => {
+    if(dragging!==el) return;
+    ev.preventDefault();
+    const cY = ev.touches? ev.touches[0].clientY : (ev.clientY ?? 0);
+    const v = getValueFromY(cY); updateFill(v); onChange(v);
+  };
+  const end = () => { el.classList.remove('grab'); dragging=null; cleanup(); };
+  const cleanup = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('touchmove', move);
+    window.removeEventListener('touchend', end);
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', end);
+  };
+  el.addEventListener('pointerdown', start);
+  el.addEventListener('touchstart', start, { passive:false });
+  el.addEventListener('mousedown', start);
+}
 </script>
 </body></html>`;
