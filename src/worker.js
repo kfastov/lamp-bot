@@ -152,9 +152,12 @@ const APP_HTML = `<!doctype html>
   /* iOS-like vertical bars */
   .bar{position:relative;width:52px;height:260px;border-radius:26px;background:linear-gradient(180deg,#0f1722,#0c121b);border:1px solid #1e2a3a;box-shadow:inset 0 2px 10px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04)}
   .bar .fill{position:absolute;left:3px;right:3px;bottom:3px;border-radius:22px;background:linear-gradient(180deg,#e9f2fb,#cfd9e6);box-shadow:0 6px 18px rgba(0,0,0,.35), inset 0 -6px 10px rgba(0,0,0,.12)}
-  .bar.temp{background:linear-gradient(180deg,#0f1722,#0c121b);}
-  .bar.temp::before{content:"";position:absolute;left:19px;right:19px;top:3px;bottom:3px;border-radius:22px;background:linear-gradient(to top,#ffb169 0%,#ffd9ad 35%,#fffaf1 55%,#e9f4ff 80%,#cfe8ff 100%);filter:saturate(1.2);opacity:.9}
-  .bar.temp .fill{background:linear-gradient(180deg,rgba(240,245,255,.95),rgba(220,230,245,.95))}
+  .bar.temp{position:relative;background:linear-gradient(to top,#ffb169 0%,#ffd9ad 28%,#fff7ea 52%,#e6f1ff 80%,#cfe8ff 100%);box-shadow:none;filter:none}
+  .bar.temp::before{content:none}
+  .bar.temp .knob{position:absolute;left:0;right:0;height:0;top:0;transform:translateY(120px);z-index:2;pointer-events:none}
+  .bar.temp .knob::before, .bar.temp .knob::after{content:"";position:absolute;width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent}
+  .bar.temp .knob::before{left:-12px;border-left:10px solid #e9eff6}
+  .bar.temp .knob::after{right:-12px;border-right:10px solid #e9eff6}
   .bar.grab{filter:brightness(1.05)}
   .bottom{position:sticky;bottom:0;padding:14px 20px;background:linear-gradient(180deg,transparent 0%,rgba(11,15,20,.85) 40%,rgba(11,15,20,.98) 100%);display:grid;place-items:center;border-top:1px solid #0f1722}
   .btn{width:min(420px,92vw);background:linear-gradient(180deg,#25bfae,#15b7a5);color:#061017;font-weight:700;letter-spacing:.2px;padding:14px 18px;border-radius:16px;border:1px solid #0d9488;cursor:pointer;box-shadow:0 10px 25px rgba(20,170,150,.35), inset 0 1px 0 rgba(255,255,255,.4);transition:transform .04s ease-in-out, filter .15s ease}
@@ -175,7 +178,7 @@ const APP_HTML = `<!doctype html>
         </div>
         <div class="vslider" id="tmpBox">
           <div class="label">Температура</div>
-          <div id="tmpBar" class="bar temp"><div class="fill" style="height:50%"></div></div>
+          <div id="tmpBar" class="bar temp"><div class="knob"></div></div>
           <div class="value" id="tmpVal">4000K</div>
         </div>
       </div>
@@ -187,7 +190,7 @@ const APP_HTML = `<!doctype html>
 const $ = s => document.querySelector(s);
 const briBar = $('#briBar'), tmpBar = $('#tmpBar'), power = $('#power');
 const briFill = () => $('#briBar .fill');
-const tmpFill = () => $('#tmpBar .fill');
+const tmpKnob = () => $('#tmpBar .knob');
 const briVal = $('#briVal'), tmpVal = $('#tmpVal');
 let state = { on:true, brightness:50, temperature_k:4000 }, t1=null, t2=null, sending=false, dragging=null;
 
@@ -195,14 +198,14 @@ init();
 async function init(){
   try{ const r = await fetch('/api/state'); const j = await r.json(); if(j.ok){ state=j; applyUI(); } }catch{}
   setupBar(briBar, 1, 100, v => { briVal.textContent=v+'%'; debounce('b',()=>send({brightness:v})); });
-  setupBar(tmpBar, 2700, 6500, v => { tmpVal.textContent=v+'K'; debounce('t',()=>send({temperature_k:v})); });
+  setupBar(tmpBar, 2700, 6500, v => { tmpVal.textContent=v+'K'; debounce('t',()=>send({temperature_k:v})); }, { knob:true });
   power.addEventListener('click', async () => { const on=!state.on; await send({on}); state.on=on; applyUI(); });
 }
 function applyUI(){
   const briPct = (state.brightness-1)/(100-1);
   const tmpPct = (state.temperature_k-2700)/(6500-2700);
   briFill().style.height = Math.round(briPct*100)+'%';
-  tmpFill().style.height = Math.round(tmpPct*100)+'%';
+  tmpKnob().style.transform = 'translateY(' + (Math.round((1 - tmpPct) * (260 - 16)) + 0) + 'px)';
   briVal.textContent=state.brightness+'%';
   tmpVal.textContent=state.temperature_k+'K';
   power.textContent=state.on?'Выключить':'Включить';
@@ -214,7 +217,7 @@ function debounce(which,fn){ if(which==='b'){ clearTimeout(t1); t1=setTimeout(fn
 async function send(patch){ if(sending) return; sending=true; try{ const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}); const j=await r.json(); if(!j.ok) console.warn('action failed', j); else Object.assign(state,patch);}catch(e){console.error(e);} sending=false;}
 
 // Pointer handling for bars
-function setupBar(el, min, max, onChange){
+function setupBar(el, min, max, onChange, opts){
   const getValueFromY = (clientY) => {
     const rect = el.getBoundingClientRect();
     const y = clamp(clientY - rect.top, 0, rect.height);
@@ -222,14 +225,20 @@ function setupBar(el, min, max, onChange){
     const value = Math.round(min + pct * (max - min));
     return clamp(value, min, max);
   };
-  const updateFill = (val) => {
+  const updateUI = (val) => {
     const pct = (val - min) / (max - min);
-    el.querySelector('.fill').style.height = Math.round(pct*100) + '%';
+    if (opts && opts.knob) {
+      const travel = 260 - 16; // visual travel with arrow height
+      const y = (1 - pct) * travel;
+      el.querySelector('.knob').style.transform = 'translateY(' + Math.round(y) + 'px)';
+    } else {
+      el.querySelector('.fill').style.height = Math.round(pct*100) + '%';
+    }
   };
   const start = (ev) => {
     ev.preventDefault(); el.classList.add('grab'); dragging = el;
     const cY = ev.touches? ev.touches[0].clientY : ev.clientY;
-    const v = getValueFromY(cY); updateFill(v); onChange(v);
+    const v = getValueFromY(cY); updateUI(v); onChange(v);
     window.addEventListener('pointermove', move, { passive:false });
     window.addEventListener('pointerup', end, { passive:false, once:true });
     window.addEventListener('touchmove', move, { passive:false });
@@ -241,7 +250,7 @@ function setupBar(el, min, max, onChange){
     if(dragging!==el) return;
     ev.preventDefault();
     const cY = ev.touches? ev.touches[0].clientY : (ev.clientY ?? 0);
-    const v = getValueFromY(cY); updateFill(v); onChange(v);
+    const v = getValueFromY(cY); updateUI(v); onChange(v);
   };
   const end = () => { el.classList.remove('grab'); dragging=null; cleanup(); };
   const cleanup = () => {
